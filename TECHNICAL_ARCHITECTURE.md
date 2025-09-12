@@ -1252,9 +1252,9 @@ erDiagram
 
 #### Backend Services
 - **Primary Language**: TypeScript/Node.js
-- **Framework**: NestJS (modular, enterprise-grade)
+- **Framework**: Fastify (high-performance, schema-based)
 - **API Layer**: 
-  - REST API (Express-based)
+  - REST API (Fastify-based)
   - GraphQL (Apollo Server) for complex queries
   - WebSocket (Socket.io) for real-time updates
 
@@ -1589,11 +1589,21 @@ db.createUser({
 ### Frontend Stack
 
 #### Web Application
-- **Framework**: Next.js 14 (App Router)
+- **Build Tool**: Vite 5
 - **UI Library**: React 18
 - **Component Library**: Shadcn/ui + Tailwind CSS
 - **State Management**: Zustand + React Query
 - **Real-time**: Socket.io client
+- **Routing**: React Router v6
+
+### Backend Stack
+
+#### API Server
+- **Framework**: Fastify 4
+- **Runtime**: Node.js 20 LTS
+- **Validation**: Ajv + Fastify Type Provider
+- **WebSockets**: Socket.io with Fastify adapter
+- **Process Manager**: PM2 for production
 
 #### Monitoring & Observability
 
@@ -2328,29 +2338,27 @@ class SecurityMiddleware {
     },
   });
   
-  // Input Validation
-  validateInput = (schema: Joi.Schema) => {
-    return (req: Request, res: Response, next: NextFunction) => {
-      const { error } = schema.validate(req.body);
+  // Input Validation for Fastify
+  validateInput = (schema: any) => {
+    return async (request: FastifyRequest, reply: FastifyReply) => {
+      const { error } = schema.validate(request.body);
       if (error) {
-        return res.status(400).json({
+        return reply.status(400).send({
           error: 'Validation failed',
           details: error.details,
         });
       }
-      next();
     };
   };
   
-  // SQL Injection Prevention
-  sanitizeQuery = (req: Request, res: Response, next: NextFunction) => {
-    req.query = this.sanitizeObject(req.query);
-    req.params = this.sanitizeObject(req.params);
-    next();
+  // NoSQL Injection Prevention for Fastify
+  sanitizeQuery = async (request: FastifyRequest, reply: FastifyReply) => {
+    request.query = this.sanitizeObject(request.query);
+    request.params = this.sanitizeObject(request.params);
   };
   
   // XSS Prevention
-  xssProtection = (req: Request, res: Response, next: NextFunction) => {
+  xssProtection = async (request: FastifyRequest, reply: FastifyReply) => {
     req.body = this.sanitizeObject(req.body);
     next();
   };

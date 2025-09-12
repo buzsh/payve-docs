@@ -162,11 +162,12 @@ flowchart LR
 ## 🛠️ Technology Stack
 
 ### Core Technologies
-- **Backend:** TypeScript, NestJS, MongoDB
+- **Backend:** TypeScript, Fastify, MongoDB
 - **AI/ML:** GPT-4, Claude, Textract OCR
 - **Browser Automation:** Playwright
 - **Payments:** Astra (ACH/RTP), Bridge (Stablecoin)
-- **Frontend:** Next.js 14, React 18, Tailwind CSS
+- **Frontend:** Vite, React 18, Tailwind CSS
+- **Backend Framework:** Fastify, Node.js
 
 ### Key Integrations
 - **ERP:** QuickBooks, NetSuite, Famous (via browser)
