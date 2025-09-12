@@ -133,7 +133,7 @@ graph TB
     %% Data Layer
     subgraph "Data Layer"
         subgraph "Primary Storage"
-            PG[(PostgreSQL)]
+            MONGO[(MongoDB)]
             REDIS[(Redis Cache)]
             S3[(S3/Document Store)]
         end
@@ -217,9 +217,9 @@ graph TB
     FA --> FAMOUS
     
     %% Data Persistence
-    PO_SVC --> PG
-    VEND --> PG
-    BILL --> PG
+    PO_SVC --> MONGO
+    VEND --> MONGO
+    BILL --> MONGO
     AUDIT --> EVT_STORE
     
     %% Caching
@@ -253,7 +253,7 @@ graph TB
     class REST,GQL,WSS,AUTH,RL,VAL,CORS apiLayer
     class PO_SVC,PS,PE,PR,DI,DP,OCR,DM,POL,RECON,VEND,BILL,PO_MGT,AUDIT,NOTIF,REPORT serviceLayer
     class FA,NSA,BA_POOL,DOC_AG,MATCH_AG,COMM_AG,LLM,ML,ANOM agentLayer
-    class PG,REDIS,S3,BULL,DLQ,PRIO,EVT_BUS,EVT_STORE dataLayer
+    class MONGO,REDIS,S3,BULL,DLQ,PRIO,EVT_BUS,EVT_STORE dataLayer
     class ASTRA,BRIDGE,POSTG,QBO,NS,FAMOUS,PLAID,BANK_API integrationLayer
 ```
 
@@ -1563,3 +1563,159 @@ These comprehensive diagrams provide a complete visual representation of the Age
 8. **Security & Audit Flow** - Complete security, compliance, and audit trail
 
 Each diagram maintains clear separation of concerns with color-coded sections for easy navigation and understanding. The flows demonstrate both happy paths and error handling scenarios, ensuring comprehensive coverage of the system's functionality.
+
+---
+
+## 9. MongoDB Security Architecture
+
+```mermaid
+graph TB
+    %% Client Connections
+    subgraph "Client Layer"
+        APP[Application Services]
+        ADMIN[Admin Tools]
+        AGENT[Browser Agents]
+    end
+    
+    %% Security Gateway
+    subgraph "Security Gateway"
+        TLS[TLS 1.3 Termination]
+        CERT[Certificate Validation]
+        AUTH[SCRAM-SHA-256 Auth]
+        RBAC[Role-Based Access]
+    end
+    
+    %% MongoDB Cluster
+    subgraph "MongoDB Cluster"
+        subgraph "Primary Replica Set"
+            PRIMARY[(Primary Node)]
+            SECONDARY1[(Secondary 1)]
+            SECONDARY2[(Secondary 2)]
+            ARBITER[Arbiter]
+        end
+        
+        subgraph "Encryption Layer"
+            CSFLE[Client-Side Field Encryption]
+            TDE[Transparent Data Encryption]
+            KMS_INT[KMS Integration]
+        end
+        
+        subgraph "Security Features"
+            AUDIT_LOG[Audit Logging]
+            SCHEMA_VAL[Schema Validation]
+            QUERY_FILTER[Query Sanitization]
+        end
+    end
+    
+    %% External Security Services
+    subgraph "External Security"
+        AWS_KMS[AWS KMS]
+        VAULT_KEYS[HashiCorp Vault]
+        CERT_AUTH[Certificate Authority]
+    end
+    
+    %% Monitoring & Detection
+    subgraph "Security Monitoring"
+        IDS[Intrusion Detection]
+        ANOMALY[Anomaly Detection]
+        ALERT[Alert System]
+        SIEM[SIEM Integration]
+    end
+    
+    %% Data Flow with Security
+    APP --> TLS
+    ADMIN --> TLS
+    AGENT --> TLS
+    
+    TLS --> CERT
+    CERT --> AUTH
+    AUTH --> RBAC
+    RBAC --> PRIMARY
+    
+    PRIMARY --> CSFLE
+    CSFLE --> KMS_INT
+    KMS_INT --> AWS_KMS
+    
+    PRIMARY --> TDE
+    TDE --> VAULT_KEYS
+    
+    PRIMARY --> SCHEMA_VAL
+    SCHEMA_VAL --> QUERY_FILTER
+    
+    PRIMARY -.->|Replication| SECONDARY1
+    PRIMARY -.->|Replication| SECONDARY2
+    PRIMARY -.->|Heartbeat| ARBITER
+    
+    PRIMARY --> AUDIT_LOG
+    AUDIT_LOG --> SIEM
+    
+    QUERY_FILTER --> ANOMALY
+    ANOMALY --> ALERT
+    ALERT --> IDS
+    
+    %% NoSQL Injection Prevention Flow
+    subgraph "NoSQL Injection Prevention"
+        INPUT[User Input]
+        SANITIZE[Input Sanitization]
+        VALIDATE[Schema Validation]
+        PARAM[Parameterized Queries]
+        SAFE_QUERY[Safe Query Execution]
+    end
+    
+    INPUT --> SANITIZE
+    SANITIZE --> VALIDATE
+    VALIDATE --> PARAM
+    PARAM --> SAFE_QUERY
+    SAFE_QUERY --> PRIMARY
+    
+    %% Styling
+    classDef security fill:#ff6b6b,stroke:#c92a2a,stroke-width:2px,color:#fff
+    classDef database fill:#4dabf7,stroke:#1971c2,stroke-width:2px,color:#fff
+    classDef encryption fill:#51cf66,stroke:#2f9e44,stroke-width:2px,color:#fff
+    classDef monitoring fill:#ffd43b,stroke:#fab005,stroke-width:2px
+    
+    class TLS,CERT,AUTH,RBAC,CERT_AUTH security
+    class PRIMARY,SECONDARY1,SECONDARY2,ARBITER database
+    class CSFLE,TDE,KMS_INT,AWS_KMS,VAULT_KEYS encryption
+    class IDS,ANOMALY,ALERT,SIEM,AUDIT_LOG monitoring
+```
+
+### MongoDB Security Configuration Details
+
+#### Connection Security Configuration
+- **TLS 1.3**: All connections encrypted with modern TLS
+- **mTLS Support**: Mutual TLS for service-to-service communication
+- **Certificate Pinning**: Prevent MITM attacks
+- **Connection Pooling**: Secure connection reuse with limits
+
+#### Authentication Mechanisms
+- **SCRAM-SHA-256**: Default strong authentication
+- **x.509 Certificates**: For service accounts and automation
+- **LDAP Integration**: Enterprise directory services
+- **Kerberos Support**: For Windows domain environments
+
+#### Encryption Strategy
+- **At Rest**: MongoDB native WiredTiger encryption
+- **In Transit**: TLS 1.3 with strong cipher suites
+- **Field Level**: Client-Side Field Level Encryption for PII
+- **Key Management**: AWS KMS integration with automatic rotation
+
+#### Access Control
+- **RBAC**: Fine-grained role-based permissions
+- **Database Isolation**: Logical separation per tenant
+- **Collection-Level Security**: Granular access controls
+- **Field-Level Security**: Redaction and projection controls
+
+#### Audit & Compliance
+- **Comprehensive Logging**: All database operations logged
+- **Immutable Audit Trail**: Write-once event store
+- **Real-time Monitoring**: Anomaly detection and alerting
+- **Compliance Reports**: SOC2, PCI-DSS ready configurations
+
+#### NoSQL Injection Prevention
+- **Input Sanitization**: Remove dangerous operators
+- **Schema Validation**: Enforce data types and patterns
+- **Parameterized Queries**: Never concatenate user input
+- **Query Whitelisting**: Allow only approved query patterns
+
+---

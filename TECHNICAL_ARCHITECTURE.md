@@ -80,7 +80,7 @@ Agentic Payments is an AI-native Accounts Payable (AP) operating system designed
 │  │ API          │  │ (Browser)    │  │ Providers    │               │
 │  └──────────────┘  └──────────────┘  └──────────────┘               │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐               │
-│  │ PostgreSQL   │  │ Redis        │  │ S3 Storage   │               │
+│  │ MongoDB      │  │ Redis        │  │ S3 Storage   │               │
 │  │ (Primary DB) │  │ (Cache/Queue)│  │ (Documents)  │               │
 │  └──────────────┘  └──────────────┘  └──────────────┘               │
 └─────────────────────────────────────────────────────────────────────┘
@@ -1259,10 +1259,13 @@ erDiagram
   - WebSocket (Socket.io) for real-time updates
 
 #### Database & Storage
-- **Primary Database**: PostgreSQL 15+
-  - JSONB for flexible document storage
-  - Full-text search capabilities
-  - Row-level security for multi-tenancy
+- **Primary Database**: MongoDB 7.0+
+  - Native document storage with flexible schemas
+  - Full-text search and Atlas Search capabilities
+  - Field-level encryption and client-side field level encryption (CSFLE)
+  - Role-based access control (RBAC) for multi-tenancy
+  - SCRAM-SHA-256 authentication
+  - TLS/SSL encryption for all connections
   
 - **Caching Layer**: Redis
   - Session management
@@ -1340,14 +1343,248 @@ erDiagram
 - **RBAC**: Casbin for policy enforcement
 
 #### Encryption
-- **Data at Rest**: AES-256
-- **Data in Transit**: TLS 1.3
-- **Secrets Management**: AWS Secrets Manager / HashiCorp Vault
+- **Data at Rest**: 
+  - MongoDB native encryption at rest (AES-256)
+  - Client-Side Field Level Encryption (CSFLE) for PII
+  - Automatic encryption key rotation
+- **Data in Transit**: 
+  - TLS 1.3 for all MongoDB connections
+  - Certificate validation and mutual TLS support
+- **Secrets Management**: 
+  - AWS KMS for encryption key management
+  - AWS Secrets Manager / HashiCorp Vault for credentials
+  - MongoDB Atlas KMS integration for CSFLE
 
 #### Compliance
 - **Audit Logging**: Immutable event store
 - **Data Retention**: Configurable policies
 - **PII Handling**: Field-level encryption
+
+### MongoDB Security Configuration
+
+#### Connection Security
+```typescript
+// Secure MongoDB connection with SCRAM-SHA-256 and TLS
+const mongoConfig = {
+  url: 'mongodb://username:password@host:port/database',
+  options: {
+    authSource: 'admin',
+    authMechanism: 'SCRAM-SHA-256',
+    tls: true,
+    tlsCertificateKeyFile: '/path/to/client.pem',
+    tlsCAFile: '/path/to/ca.pem',
+    tlsAllowInvalidHostnames: false,
+    tlsAllowInvalidCertificates: false,
+    replicaSet: 'rs0',
+    readPreference: 'primaryPreferred',
+    w: 'majority',
+    journal: true,
+    retryWrites: true,
+    maxPoolSize: 100,
+    minPoolSize: 10,
+    serverSelectionTimeoutMS: 5000,
+    socketTimeoutMS: 45000
+  }
+};
+```
+
+#### NoSQL Injection Prevention
+```typescript
+// Input sanitization middleware for MongoDB queries
+export const sanitizeMongoQuery = (query: any): any => {
+  if (typeof query !== 'object' || query === null) {
+    return query;
+  }
+  
+  // Remove dangerous operators
+  const dangerousOperators = ['$where', '$regex', '$options', '$expr'];
+  
+  Object.keys(query).forEach(key => {
+    if (dangerousOperators.includes(key)) {
+      delete query[key];
+    } else if (typeof query[key] === 'object') {
+      query[key] = sanitizeMongoQuery(query[key]);
+    }
+  });
+  
+  return query;
+};
+
+// Parameterized queries using MongoDB driver
+export const findVendorSecure = async (vendorId: string) => {
+  // Always use parameterized queries, never string concatenation
+  const sanitizedId = new ObjectId(vendorId); // Validates ObjectId format
+  return await vendorsCollection.findOne({ _id: sanitizedId });
+};
+
+// Schema validation at database level
+const vendorSchema = {
+  $jsonSchema: {
+    bsonType: "object",
+    required: ["legalName", "ein", "status"],
+    properties: {
+      legalName: {
+        bsonType: "string",
+        maxLength: 255,
+        pattern: "^[a-zA-Z0-9\\s\\-\\.,'&]+$"
+      },
+      ein: {
+        bsonType: "string",
+        pattern: "^[0-9]{2}-[0-9]{7}$"
+      },
+      status: {
+        enum: ["active", "inactive", "pending", "blocked"]
+      }
+    }
+  }
+};
+```
+
+#### Field-Level Encryption (CSFLE)
+```typescript
+// Client-Side Field Level Encryption configuration
+const encryptionConfig = {
+  keyVaultNamespace: 'encryption.__keyVault',
+  kmsProviders: {
+    aws: {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      sessionToken: process.env.AWS_SESSION_TOKEN
+    }
+  },
+  schemaMap: {
+    'payve.vendors': {
+      bsonType: 'object',
+      encryptMetadata: {
+        keyId: [new Binary(Buffer.from(dataKeyId, 'base64'), 4)]
+      },
+      properties: {
+        // Encrypt sensitive fields
+        ein: {
+          encrypt: {
+            bsonType: 'string',
+            algorithm: 'AEAD_AES_256_CBC_HMAC_SHA_512-Deterministic'
+          }
+        },
+        bankAccounts: {
+          encrypt: {
+            bsonType: 'object',
+            algorithm: 'AEAD_AES_256_CBC_HMAC_SHA_512-Random'
+          }
+        },
+        taxId: {
+          encrypt: {
+            bsonType: 'string',
+            algorithm: 'AEAD_AES_256_CBC_HMAC_SHA_512-Deterministic'
+          }
+        }
+      }
+    }
+  }
+};
+```
+
+#### Role-Based Access Control (RBAC)
+```javascript
+// MongoDB RBAC configuration
+db.createRole({
+  role: "apReadOnly",
+  privileges: [
+    {
+      resource: { db: "payve", collection: "vendors" },
+      actions: ["find", "count"]
+    },
+    {
+      resource: { db: "payve", collection: "bills" },
+      actions: ["find", "count"]
+    }
+  ],
+  roles: []
+});
+
+db.createRole({
+  role: "apProcessor",
+  privileges: [
+    {
+      resource: { db: "payve", collection: "" },
+      actions: ["find", "insert", "update", "remove"]
+    }
+  ],
+  roles: ["apReadOnly"]
+});
+
+db.createRole({
+  role: "apAdmin",
+  privileges: [
+    {
+      resource: { db: "payve", collection: "" },
+      actions: ["find", "insert", "update", "remove", "createIndex", "dropIndex"]
+    }
+  ],
+  roles: ["apProcessor", "dbAdmin"]
+});
+
+// User creation with specific roles
+db.createUser({
+  user: "ap_service",
+  pwd: passwordPrompt(),
+  roles: [
+    { role: "apProcessor", db: "payve" }
+  ],
+  mechanisms: ["SCRAM-SHA-256"]
+});
+```
+
+#### Audit Configuration
+```javascript
+// MongoDB audit configuration (Enterprise)
+{
+  "auditLog": {
+    "destination": "file",
+    "format": "JSON",
+    "path": "/var/log/mongodb/audit.json",
+    "filter": {
+      "$or": [
+        { "atype": "authenticate" },
+        { "atype": "createCollection" },
+        { "atype": "dropCollection" },
+        { "atype": "createDatabase" },
+        { "atype": "dropDatabase" },
+        { "atype": "createUser" },
+        { "atype": "dropUser" },
+        { "atype": "updateUser" },
+        { "atype": "grantRolesToUser" },
+        { "atype": "revokeRolesFromUser" }
+      ]
+    }
+  }
+}
+```
+
+#### Security Best Practices
+1. **Network Security**
+   - Bind MongoDB to specific IP addresses only
+   - Use VPC peering or PrivateLink for cloud deployments
+   - Implement IP whitelisting
+   - Never expose MongoDB directly to the internet
+
+2. **Authentication**
+   - Always enable authentication
+   - Use SCRAM-SHA-256 as minimum
+   - Implement x.509 certificates for service accounts
+   - Rotate credentials regularly
+
+3. **Data Protection**
+   - Enable encryption at rest
+   - Use CSFLE for PII and sensitive data
+   - Implement backup encryption
+   - Regular security audits
+
+4. **Monitoring**
+   - Enable audit logging
+   - Monitor failed authentication attempts
+   - Track privilege escalations
+   - Alert on unusual query patterns
 
 ### Frontend Stack
 
@@ -2275,7 +2512,11 @@ class AuditService {
 
 #### Week 1-2: Infrastructure Setup
 - [ ] Set up development environment
-- [ ] Configure PostgreSQL with multi-tenancy
+- [ ] Configure MongoDB with secure multi-tenancy
+- [ ] Set up SCRAM-SHA-256 authentication
+- [ ] Configure TLS/SSL certificates
+- [ ] Implement role-based access control
+- [ ] Set up field-level encryption keys
 - [ ] Set up Redis for caching and queues
 - [ ] Configure S3/MinIO for document storage
 - [ ] Implement authentication with Auth0/Cognito

@@ -162,7 +162,7 @@ flowchart LR
 ## 🛠️ Technology Stack
 
 ### Core Technologies
-- **Backend:** TypeScript, NestJS, PostgreSQL
+- **Backend:** TypeScript, NestJS, MongoDB
 - **AI/ML:** GPT-4, Claude, Textract OCR
 - **Browser Automation:** Playwright
 - **Payments:** Astra (ACH/RTP), Bridge (Stablecoin)
